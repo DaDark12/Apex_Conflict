@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Conflict: FPS Simulator</title>
+    <!-- Tailwind CSS for clean UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js for 3D rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <style>
+        /* Custom styles for the 3D canvas */
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; }
+        #game-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #0d1117; }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 10px;
+            height: 10px;
+            border: 1px solid white;
+            border-radius: 50%;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .ui-panel {
+            background-color: rgba(17, 24, 39, 0.95);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(75, 85, 99, 0.5);
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Game Container and UI Overlays -->
+    <div id="game-container">
+        <!-- 3D Canvas will be injected here by three.js -->
+    </div>
+
+    <!-- UI Crosshair -->
+    <div id="crosshair" class="hidden"></div>
+
+    <!-- Main UI Screens -->
+    <div id="ui-overlay" class="fixed inset-0 flex items-center justify-center p-4">
+        
+        <!-- === 1. Setup Screen (Initial state) === -->
+        <div id="setup-screen" class="ui-panel w-full max-w-lg p-8 space-y-6">
+            <h1 class="text-3xl font-bold text-white text-center">Apex Conflict Setup</h1>
+            <p class="text-gray-400 text-center">Set your username to begin, then choose your loadout.</p>
+            <input type="text" id="username-input" placeholder="Enter your custom username" 
+                   class="w-full p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 transition duration-150"
+                   maxlength="16">
+            <div id="loadout-selection" class="space-y-4 pt-4">
+                <h2 class="text-xl font-semibold text-white">Select Loadout</h2>
+                <select id="weapon-select" class="w-full p-3 rounded-lg bg-gray-700 text-white transition duration-150">
+                    <option value="AR">Assault Rifle (AR)</option>
+                    <option value="SNIPER">Sniper Rifle</option>
+                    <option value="SMG">Submachine Gun (SMG)</option>
+                </select>
+                <select id="grenade-select" class="w-full p-3 rounded-lg bg-gray-700 text-white transition duration-150">
+                    <option value="FRAG">Frag Grenade</option>
+                    <option value="SMOKE">Smoke Grenade</option>
+                    <option value="FLASH">Flashbang</option>
+                </select>
+            </div>
+            <button id="save-profile-button" class="w-full p-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-150 disabled:bg-indigo-400" disabled>
+                Save Profile & Continue
+            </button>
+            <p id="auth-status" class="text-sm text-center text-yellow-500">Connecting to server...</p>
+        </div>
+
+        <!-- === 2. Lobby List Screen === -->
+        <div id="lobby-list-screen" class="ui-panel w-full max-w-3xl p-8 space-y-6 hidden">
+            <h1 class="text-3xl font-bold text-white">Lobby Selection</h1>
+            <p class="text-gray-400">Welcome, <span id="display-username" class="font-bold text-indigo-400"></span>! Your User ID: <span id="display-user-id" class="text-sm text-gray-500"></span></p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button id="create-lobby-button" class="col-span-1 md:col-span-2 p-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition duration-150">
+                    + Create New Lobby
+                </button>
+                <input type="text" id="join-code-input" placeholder="Join Code" 
+                       class="p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 col-span-1">
+                <button id="join-lobby-button" class="col-span-1 p-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition duration-150 disabled:bg-blue-400">
+                    Join Private Lobby
+                </button>
+            </div>
+            
+            <div id="public-lobbies-container" class="space-y-3 max-h-64 overflow-y-auto pr-2">
+                <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2">Public Matches</h2>
+                <!-- Lobby list items will be injected here -->
+            </div>
+        </div>
+
+        <!-- === 3. Game Lobby Screen === -->
+        <div id="game-lobby-screen" class="ui-panel w-full max-w-xl p-8 space-y-6 hidden">
+            <h1 class="text-3xl font-bold text-white" id="current-lobby-name">Lobby: Unknown</h1>
+            <p class="text-gray-400" id="current-lobby-info"></p>
+            <div id="lobby-players-list" class="space-y-2 p-3 bg-gray-700 rounded-lg max-h-48 overflow-y-auto">
+                <h2 class="text-lg font-semibold text-white">Players (0)</h2>
+            </div>
+            
+            <div class="flex space-x-4">
+                <button id="leave-lobby-button" class="flex-1 p-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition duration-150">
+                    Leave
+                </button>
+                <button id="start-game-button" class="flex-1 p-3 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 transition duration-150 disabled:bg-purple-400">
+                    Start Match (Host Only)
+                </button>
+            </div>
+        </div>
+        
+        <!-- === 4. Create Lobby Modal (New UI Component) === -->
+        <div id="create-lobby-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden items-center justify-center z-[2000]">
+            <div class="ui-panel p-8 w-full max-w-sm space-y-5">
+                <h3 class="text-2xl font-bold text-white">Create New Match</h3>
+                
+                <div>
+                    <label for="new-lobby-name" class="block text-sm font-medium text-gray-400">Lobby Name</label>
+                    <input type="text" id="new-lobby-name" placeholder="Alpha Server" maxlength="24"
+                           class="w-full p-2 mt-1 rounded-lg bg-gray-700 text-white border border-gray-600 focus:ring-indigo-500" required>
+                </div>
+                
+                <div>
+                    <label for="new-lobby-mode" class="block text-sm font-medium text-gray-400">Game Mode</label>
+                    <select id="new-lobby-mode" class="w-full p-2 mt-1 rounded-lg bg-gray-700 text-white border border-gray-600">
+                        <option value="PVP">Player vs Player (PVP)</option>
+                        <option value="ZOMBIE">Kill The Zombies (PVE)</option>
+                    </select>
+                </div>
+                
+                <div class="flex items-center">
+                    <input id="new-lobby-private" type="checkbox" class="h-4 w-4 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500">
+                    <label for="new-lobby-private" class="ml-2 text-sm font-medium text-gray-300">Private Match (Shareable Code)</label>
+                </div>
+
+                <div class="flex space-x-3 pt-3">
+                    <button id="confirm-create-lobby-button" class="flex-1 p-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-150">
+                        Create Lobby
+                    </button>
+                    <button id="cancel-create-lobby-button" class="p-3 bg-gray-600 text-white font-bold rounded-lg hover:bg-gray-700 transition duration-150">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- === 5. In-Game HUD (minimal) === -->
+        <div id="hud" class="fixed top-4 left-4 p-4 bg-gray-800 bg-opacity-70 rounded-lg hidden">
+            <p class="text-white text-lg">Weapon: <span id="hud-weapon">AR</span></p>
+            <p class="text-white text-lg">Grenade: <span id="hud-grenade">FRAG</span></p>
+            <p class="text-red-400 text-sm">Use WASD and Mouse to Look/Move.</p>
+        </div>
+        
+        <!-- Custom Message/Modal Box (Replaces alert() for simple messages) -->
+        <div id="message-box" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-[2000]">
+            <div class="ui-panel p-6 w-80 space-y-4">
+                <h3 id="message-title" class="text-xl font-bold text-white">Message</h3>
+                <p id="message-content" class="text-gray-300"></p>
+                <button id="message-close" class="w-full p-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-150">
+                    OK
+                </button>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Global Variables available in Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
+
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, signInAnonymously, signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, deleteField, 
+            onSnapshot, collection, query, where, getDocs, 
+            serverTimestamp, setLogLevel 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- Game and Firebase State ---
+        let app, db, auth;
+        let userId = null;
+        let isAuthReady = false;
+        let playerProfile = {
+            username: '',
+            skinId: 'default',
+            primaryWeapon: 'AR',
+            grenadeType: 'FRAG',
+            position: { x: 0, y: 1.8, z: 0 },
+            rotation: { y: 0 },
+            timestamp: serverTimestamp()
+        };
+        let currentLobbyId = null;
+        let currentLobbySnapshotUnsubscribe = null;
+        let playerRefUnsubscribe = null;
+        let allLobbiesUnsubscribe = null; // Unsubscribe function for public lobby list
+        
+        // --- 3D/Game State ---
+        let scene, camera, renderer;
+        let players = {}; // Map: userId -> { mesh, nameTag, data }
+        let isGameRunning = false;
+        let isPointerLocked = false;
+        let moveState = { forward: false, backward: false, left: false, right: false };
+        let PLAYER_HEIGHT = 1.8;
+        const PLAYER_SPEED = 5;
+        const ROTATION_SPEED = 0.002;
+
+        // --- DOM Elements ---
+        const setupScreen = document.getElementById('setup-screen');
+        const lobbyListScreen = document.getElementById('lobby-list-screen');
+        const gameLobbyScreen = document.getElementById('game-lobby-screen');
+        const hud = document.getElementById('hud');
+        const crosshair = document.getElementById('crosshair');
+        const authStatus = document.getElementById('auth-status');
+        const usernameInput = document.getElementById('username-input');
+        const saveProfileButton = document.getElementById('save-profile-button');
+        const publicLobbiesContainer = document.getElementById('public-lobbies-container');
+        const lobbyPlayersList = document.getElementById('lobby-players-list');
+        const startGameButton = document.getElementById('start-game-button');
+        const joinCodeInput = document.getElementById('join-code-input');
+        const createLobbyButton = document.getElementById('create-lobby-button');
+        
+        // Modal elements
+        const messageBox = document.getElementById('message-box');
+        const messageTitle = document.getElementById('message-title');
+        const messageContent = document.getElementById('message-content');
+        document.getElementById('message-close').onclick = () => messageBox.classList.add('hidden');
+        
+        // Create Lobby Modal elements
+        const createLobbyModal = document.getElementById('create-lobby-modal');
+        const newLobbyNameInput = document.getElementById('new-lobby-name');
+        const newLobbyModeSelect = document.getElementById('new-lobby-mode');
+        const newLobbyPrivateCheckbox = document.getElementById('new-lobby-private');
+        const confirmCreateLobbyButton = document.getElementById('confirm-create-lobby-button');
+        const cancelCreateLobbyButton = document.getElementById('cancel-create-lobby-button');
+
+
+        // Custom Message Box function (Replaces alert() and simple confirms)
+        function showMessage(title, content) {
+            messageTitle.textContent = title;
+            messageContent.textContent = content;
+            messageBox.classList.remove('hidden');
+        }
+
+
+        // =========================================================================
+        // === 1. FIREBASE SETUP & AUTHENTICATION ===
+        // =========================================================================
+
+        async function initFirebase() {
+            try {
+                // Set Firestore log level for debugging
+                setLogLevel('error'); // Use 'debug' for detailed logs
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Sign in using the custom token provided by the environment
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    // Fallback to anonymous sign-in if no token is provided
+                    await signInAnonymously(auth);
+                }
+                
+                // Set up the Auth State Listener
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        await loadUserProfile();
+                        isAuthReady = true;
+                    } else {
+                        // This should not happen if signInWithCustomToken succeeds
+                        authStatus.textContent = "Authentication failed. Cannot connect to server.";
+                        saveProfileButton.disabled = true;
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                authStatus.textContent = `Error: ${error.message}`;
+                saveProfileButton.disabled = true;
+            }
+        }
+
+        // =========================================================================
+        // === 2. PROFILE & UI MANAGEMENT ===
+        // =========================================================================
+
+        function updateScreen(screenId) {
+            // Stop listening to public lobbies if we are leaving the list screen
+            if (screenId !== 'lobby-list' && allLobbiesUnsubscribe) {
+                allLobbiesUnsubscribe();
+                allLobbiesUnsubscribe = null;
+            } else if (screenId === 'lobby-list' && !allLobbiesUnsubscribe && isAuthReady) {
+                // Restart listener if entering lobby list and auth is ready
+                startLobbyListener();
+            }
+
+            setupScreen.classList.add('hidden');
+            lobbyListScreen.classList.add('hidden');
+            gameLobbyScreen.classList.add('hidden');
+            hud.classList.add('hidden');
+            crosshair.classList.add('hidden');
+            createLobbyModal.classList.add('hidden'); // Ensure modal is hidden
+            
+            // Hide the 3D canvas by default
+            const canvasElement = document.getElementById('game-container').querySelector('canvas');
+            if (canvasElement) {
+                canvasElement.style.display = 'none';
+            }
+            
+            // Exit pointer lock if we leave the game screen
+            if (document.pointerLockElement) {
+                document.exitPointerLock();
+            }
+
+            switch (screenId) {
+                case 'setup':
+                    setupScreen.classList.remove('hidden');
+                    break;
+                case 'lobby-list':
+                    lobbyListScreen.classList.remove('hidden');
+                    // Listener started above in the conditional block
+                    break;
+                case 'game-lobby':
+                    gameLobbyScreen.classList.remove('hidden');
+                    break;
+                case 'game':
+                    hud.classList.remove('hidden');
+                    crosshair.classList.remove('hidden');
+                    if (canvasElement) {
+                        canvasElement.style.display = 'block';
+                    }
+                    break;
+            }
+        }
+        
+        async function loadUserProfile() {
+            // Using a specific path for user profile data
+            const profileRef = doc(db, `artifacts/${appId}/users/${userId}/profile/data`);
+            const profileSnap = await getDoc(profileRef);
+
+            if (profileSnap.exists()) {
+                // Load existing profile
+                Object.assign(playerProfile, profileSnap.data());
+                usernameInput.value = playerProfile.username;
+                document.getElementById('weapon-select').value = playerProfile.primaryWeapon;
+                document.getElementById('grenade-select').value = playerProfile.grenadeType;
+                
+                authStatus.textContent = `Welcome back, ${playerProfile.username}!`;
+                updateScreen('lobby-list');
+            } else {
+                // New user - show setup screen
+                authStatus.textContent = "Connected. Please set up your profile.";
+                updateScreen('setup');
+            }
+            document.getElementById('display-username').textContent = playerProfile.username;
+            document.getElementById('display-user-id').textContent = userId;
+            saveProfileButton.disabled = false;
+            
+            // Enable button only if there is input
+            usernameInput.addEventListener('input', () => {
+                saveProfileButton.disabled = usernameInput.value.trim().length < 3;
+            });
+        }
+
+        saveProfileButton.addEventListener('click', async () => {
+            if (!userId) return;
+
+            const newUsername = usernameInput.value.trim();
+            if (newUsername.length < 3) {
+                showMessage("Input Error", "Username must be at least 3 characters long.");
+                return;
+            }
+
+            playerProfile.username = newUsername;
+            playerProfile.primaryWeapon = document.getElementById('weapon-select').value;
+            playerProfile.grenadeType = document.getElementById('grenade-select').value;
+
+            try {
+                const profileRef = doc(db, `artifacts/${appId}/users/${userId}/profile/data`);
+                await setDoc(profileRef, {
+                    username: playerProfile.username,
+                    primaryWeapon: playerProfile.primaryWeapon,
+                    grenadeType: playerProfile.grenadeType,
+                    skinId: playerProfile.skinId,
+                }, { merge: true });
+                
+                document.getElementById('display-username').textContent = playerProfile.username;
+                document.getElementById('display-user-id').textContent = userId;
+                updateScreen('lobby-list');
+            } catch (error) {
+                console.error("Failed to save profile:", error);
+                showMessage("Server Error", `Failed to save profile: ${error.message}`);
+            }
+        });
+
+        // =========================================================================
+        // === 3. LOBBY MANAGEMENT (FIRESTORE) ===
+        // =========================================================================
+
+        function getLobbyCollectionRef() {
+            // Public collection for shared lobby data
+            return collection(db, `artifacts/${appId}/public/data/lobbies`);
+        }
+
+        // --- A. Listening for Public Lobbies ---
+        function startLobbyListener() {
+            if (!isAuthReady) return;
+
+            // Only query for lobbies that are not private and are still in LOBBY status
+            const q = query(getLobbyCollectionRef(), where("isPrivate", "==", false), where("status", "==", "LOBBY"));
+            
+            // Unsubscribe from any old listener before attaching a new one
+            if (allLobbiesUnsubscribe) {
+                allLobbiesUnsubscribe();
+            }
+
+            allLobbiesUnsubscribe = onSnapshot(q, (snapshot) => {
+                publicLobbiesContainer.innerHTML = `
+                    <h2 class="text-xl font-semibold text-white border-b border-gray-700 pb-2">Public Matches</h2>
+                `;
+                if (snapshot.empty) {
+                     publicLobbiesContainer.innerHTML += `<p class="text-gray-500 mt-2">No public lobbies found. Create one!</p>`;
+                }
+                
+                snapshot.docs.forEach(doc => {
+                    const lobby = doc.data();
+                    const lobbyId = doc.id;
+                    const playerCount = Object.keys(lobby.players || {}).length;
+
+                    const lobbyElement = document.createElement('div');
+                    lobbyElement.className = 'flex justify-between items-center p-3 bg-gray-800 rounded-lg hover:bg-gray-700 transition duration-150 cursor-pointer';
+                    lobbyElement.innerHTML = `
+                        <div>
+                            <p class="text-white font-semibold">${lobby.name}</p>
+                            <p class="text-xs text-gray-400">${lobby.mode} | Host: ${lobby.hostName}</p>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <span class="text-indigo-400">${playerCount} / 8</span>
+                            <button class="join-btn p-2 text-sm bg-blue-500 rounded hover:bg-blue-600" data-id="${lobbyId}">Join</button>
+                        </div>
+                    `;
+                    publicLobbiesContainer.appendChild(lobbyElement);
+                });
+
+                document.querySelectorAll('.join-btn').forEach(button => {
+                    button.onclick = (e) => joinLobby(e.target.dataset.id);
+                });
+            }, (error) => {
+                console.error("Error listening to public lobbies:", error);
+            });
+        }
+        
+        // --- B. Create Lobby Modal Handlers ---
+        
+        // Open Modal
+        createLobbyButton.addEventListener('click', () => {
+            if (!userId) {
+                showMessage("Authentication Required", "Please complete your profile setup first.");
+                return;
+            }
+            newLobbyNameInput.value = `${playerProfile.username}'s Lobby`;
+            newLobbyModeSelect.value = 'PVP';
+            newLobbyPrivateCheckbox.checked = false;
+            createLobbyModal.classList.remove('hidden');
+        });
+
+        // Close Modal
+        cancelCreateLobbyButton.addEventListener('click', () => {
+            createLobbyModal.classList.add('hidden');
+        });
+
+        // Confirm Creation
+        confirmCreateLobbyButton.addEventListener('click', async () => {
+            const lobbyName = newLobbyNameInput.value.trim();
+            const mode = newLobbyModeSelect.value;
+            const isPrivate = newLobbyPrivateCheckbox.checked;
+
+            if (lobbyName.length < 3) {
+                showMessage("Input Error", "Lobby name must be at least 3 characters.");
+                return;
+            }
+
+            createLobbyModal.classList.add('hidden');
+            
+            const joinCode = isPrivate ? Math.random().toString(36).substring(2, 8).toUpperCase() : null; // 6-char code
+
+            const lobbyRef = doc(getLobbyCollectionRef());
+            const newLobbyId = lobbyRef.id;
+
+            const newLobby = {
+                hostId: userId,
+                hostName: playerProfile.username,
+                name: lobbyName,
+                status: 'LOBBY', // LOBBY, PLAYING, ENDED
+                isPrivate: isPrivate,
+                joinCode: joinCode,
+                mode: mode,
+                players: {},
+                createdAt: serverTimestamp()
+            };
+
+            try {
+                // Create the lobby document
+                await setDoc(lobbyRef, newLobby);
+                // Immediately join the newly created lobby
+                await joinLobby(newLobbyId, joinCode);
+                
+            } catch (error) {
+                console.error("Error creating lobby:", error);
+                showMessage("Creation Failed", `Could not create lobby: ${error.message}`);
+            }
+        });
+
+
+        // --- C. Join Lobby ---
+        async function joinLobby(lobbyId, joinCode = null) {
+            if (!userId) return;
+            currentLobbyId = lobbyId;
+            
+            // 1. Unsubscribe from old listeners
+            if (allLobbiesUnsubscribe) {
+                allLobbiesUnsubscribe();
+                allLobbiesUnsubscribe = null;
+            }
+            if (currentLobbySnapshotUnsubscribe) {
+                currentLobbySnapshotUnsubscribe();
+            }
+            
+            const lobbyRef = doc(getLobbyCollectionRef(), lobbyId);
+            
+            // 2. Add player data to the lobby
+            // We use the playerProfile, which includes the username and loadout
+            const playerDocData = { 
+                ...playerProfile, 
+                timestamp: serverTimestamp()
+            };
+            const playerMapUpdate = {};
+            playerMapUpdate[`players.${userId}`] = playerDocData;
+            
+            try {
+                // Use updateDoc to add the player to the 'players' map field
+                await updateDoc(lobbyRef, playerMapUpdate);
+            } catch (e) {
+                console.error("Failed to add player to lobby:", e);
+                showMessage("Join Failed", "Lobby not found or is full/in-game.");
+                currentLobbyId = null;
+                updateScreen('lobby-list');
+                return;
+            }
+            
+            // If successfully joined a newly created PRIVATE lobby, show the code
+            if (joinCode) {
+                showMessage("Lobby Created!", `Your private lobby is ready. Share this code: <span class="text-green-400">${joinCode}</span>`);
+            }
+
+            // 3. Start listening to the specific lobby state
+            currentLobbySnapshotUnsubscribe = onSnapshot(lobbyRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const lobbyData = docSnap.data();
+                    handleLobbyState(lobbyData);
+                } else {
+                    // Lobby was deleted (Host left or manually deleted)
+                    leaveLobby(false, true); // Silent leave and redirect
+                    showMessage("Lobby Closed", "The host left, and the lobby was automatically closed.");
+                }
+            }, (error) => {
+                console.error("Error listening to current lobby:", error);
+                leaveLobby(false, true); // Silent leave and redirect on error
+            });
+        }
+        
+        // --- D. Join Private Lobby by Code ---
+        document.getElementById('join-lobby-button').addEventListener('click', async () => {
+            const joinCode = joinCodeInput.value.trim().toUpperCase();
+            if (joinCode.length !== 6) {
+                showMessage("Input Error", "Please enter a valid 6-character Join Code.");
+                return;
+            }
+
+            // Query for the specific lobby using the join code
+            const q = query(getLobbyCollectionRef(), where("joinCode", "==", joinCode), where("status", "==", "LOBBY"));
+            const snapshot = await getDocs(q);
+
+            if (!snapshot.empty) {
+                const lobbyId = snapshot.docs[0].id;
+                joinLobby(lobbyId);
+            } else {
+                showMessage("Join Failed", "No lobby found with that code, or the match has already started.");
+            }
+        });
+
+        // --- E. Handle Lobby State Changes (Lobby Screen / Game Start) ---
+        function handleLobbyState(lobbyData) {
+            // Update UI
+            const isHost = lobbyData.hostId === userId;
+            const playerCount = Object.keys(lobbyData.players || {}).length;
+            
+            document.getElementById('current-lobby-name').textContent = `Lobby: ${lobbyData.name}`;
+            document.getElementById('current-lobby-info').textContent = 
+                `${lobbyData.mode} Mode | Code: ${lobbyData.joinCode || 'N/A'} | Host: ${lobbyData.hostName}`;
+
+            // Update Player List
+            const currentPlayers = lobbyData.players || {};
+            
+            let playerListHtml = `<h2 class="text-lg font-semibold text-white">Players (${playerCount})</h2>`;
+            for (const id in currentPlayers) {
+                const p = currentPlayers[id];
+                const playerIsHost = id === lobbyData.hostId;
+                const isYou = id === userId;
+                playerListHtml += `
+                    <p class="text-gray-300">
+                        ${playerIsHost ? '👑 ' : ''}${p.username} ${isYou ? '(You)' : ''} 
+                        <span class="text-xs text-indigo-400"> [${p.primaryWeapon}/${p.grenadeType}]</span>
+                    </p>
+                `;
+            }
+            lobbyPlayersList.innerHTML = playerListHtml;
+
+            // Host controls
+            startGameButton.classList.toggle('hidden', !isHost);
+            startGameButton.disabled = playerCount < 2; // Need at least 2 players to start
+
+            // Check if game has started
+            if (lobbyData.status === 'PLAYING') {
+                startGame(lobbyData);
+            } else if (lobbyData.status === 'LOBBY') {
+                updateScreen('game-lobby');
+            }
+        }
+        
+        // --- F. Leave Lobby ---
+        document.getElementById('leave-lobby-button').addEventListener('click', () => leaveLobby(true, true));
+        
+        async function leaveLobby(manualLeave = true, shouldRedirect = true) {
+            if (!currentLobbyId) return;
+
+            // 1. Unsubscribe from listeners
+            if (currentLobbySnapshotUnsubscribe) {
+                currentLobbySnapshotUnsubscribe();
+                currentLobbySnapshotUnsubscribe = null;
+            }
+            if (playerRefUnsubscribe) {
+                playerRefUnsubscribe();
+                playerRefUnsubscribe = null;
+            }
+            
+            const lobbyRef = doc(getLobbyCollectionRef(), currentLobbyId);
+
+            try {
+                // Get current lobby state to check if the user is the host
+                const lobbySnap = await getDoc(lobbyRef);
+                const lobbyData = lobbySnap.data();
+                const isHost = lobbyData && lobbyData.hostId === userId;
+
+                if (isHost) {
+                    // Host leaves: Delete the entire lobby document
+                    await deleteDoc(lobbyRef);
+                    if(manualLeave) showMessage("Lobby Closed", "You left, and as the host, the lobby has been closed for all players.");
+                } else {
+                    // Regular player leaves: Remove them from the 'players' map
+                    const playerMapUpdate = {};
+                    playerMapUpdate[`players.${userId}`] = deleteField();
+                    await updateDoc(lobbyRef, playerMapUpdate);
+                    if (manualLeave) showMessage("Left Lobby", "You have successfully returned to the lobby list.");
+                }
+                
+            } catch (e) {
+                // Ignore 'not-found' error if the lobby was already deleted by another player/host
+                if (e.code !== 'not-found' && manualLeave) {
+                     console.warn("Failed to clean up lobby data:", e);
+                }
+            } finally {
+                // 4. Clean up local state and redirect
+                currentLobbyId = null;
+                isGameRunning = false;
+                if(shouldRedirect) {
+                    updateScreen('lobby-list');
+                }
+            }
+        }
+        
+        // --- G. Start Game (Host Action) ---
+        startGameButton.addEventListener('click', async () => {
+             if (!currentLobbyId || !currentLobbySnapshotUnsubscribe) return;
+             const lobbyRef = doc(getLobbyCollectionRef(), currentLobbyId);
+             try {
+                // Change lobby status to start the game for all players
+                await updateDoc(lobbyRef, { status: 'PLAYING' });
+             } catch (e) {
+                console.error("Failed to start game:", e);
+                showMessage("Start Failed", "Could not update lobby status to 'PLAYING'.");
+             }
+        });
+
+        // =========================================================================
+        // === 4. THREE.JS 3D GAME ENVIRONMENT (UNCHANGED) ===
+        // =========================================================================
+
+        function initThreeJS() {
+            // Setup Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a1017);
+            scene.fog = new THREE.Fog(0x0a1017, 0, 100);
+
+            // Setup Camera (The player's view)
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, PLAYER_HEIGHT, 0);
+
+            // Setup Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('game-container').appendChild(renderer.domElement);
+            renderer.domElement.style.display = 'none'; // Hide until game starts
+
+            // Add Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 3);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+            dirLight.position.set(5, 10, 7.5);
+            scene.add(dirLight);
+
+            // Create Ground Plane (The Arena)
+            const groundGeometry = new THREE.PlaneGeometry(100, 100);
+            const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x1a2430, side: THREE.DoubleSide });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = Math.PI / 2;
+            scene.add(ground);
+            
+            // Add a simple box in the middle for reference
+            const boxGeo = new THREE.BoxGeometry(2, 2, 2);
+            const boxMat = new THREE.MeshPhongMaterial({ color: 0xcc0000 });
+            const box = new THREE.Mesh(boxGeo, boxMat);
+            box.position.set(5, 1, -5);
+            scene.add(box);
+
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Player Representation in 3D ---
+        function createPlayerMesh(username, weapon) {
+            // Simple Player Capsule (Enemy)
+            const geometry = new THREE.CapsuleGeometry(0.4, 1.0, 4, 8);
+            const material = new THREE.MeshPhongMaterial({ color: 0x0077ff });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.y = 1.0; // Half height
+
+            // Weapon Placeholder (e.g., a simple box for the AR)
+            const weaponColor = weapon === 'AR' ? 0xaaaaaa : weapon === 'SNIPER' ? 0x777777 : 0xdddddd;
+            const weaponGeo = new THREE.BoxGeometry(0.1, 0.1, 0.5);
+            const weaponMat = new THREE.MeshPhongMaterial({ color: weaponColor });
+            const weaponMesh = new THREE.Mesh(weaponGeo, weaponMat);
+            weaponMesh.position.set(0.2, 0.3, 0.3); // Position relative to body
+            mesh.add(weaponMesh);
+
+            // Name Tag (Floating text above player)
+            const tagCanvas = document.createElement('canvas');
+            const context = tagCanvas.getContext('2d');
+            tagCanvas.width = 256;
+            tagCanvas.height = 32;
+            context.font = 'Bold 20px Arial';
+            context.fillStyle = 'white';
+            context.textAlign = 'center';
+            context.fillText(username, 128, 20);
+
+            const tagTexture = new THREE.CanvasTexture(tagCanvas);
+            const tagSpriteMaterial = new THREE.SpriteMaterial({ map: tagTexture });
+            const tagSprite = new THREE.Sprite(tagSpriteMaterial);
+            tagSprite.scale.set(3, 0.5, 1);
+            tagSprite.position.y = PLAYER_HEIGHT / 2 + 1.0; // Above the capsule
+            mesh.add(tagSprite);
+            
+            return { mesh, tagSprite };
+        }
+        
+        // =========================================================================
+        // === 5. GAME LOOP & INPUTS (UNCHANGED) ===
+        // =========================================================================
+
+        let lastUpdateTime = 0;
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+            
+            if (!isGameRunning) {
+                // If not running, stop the three.js updates but keep the requestAnimationFrame loop alive
+                return;
+            }
+            
+            const deltaTime = (currentTime - lastUpdateTime) / 1000;
+            lastUpdateTime = currentTime;
+
+            // Player Movement (Simple non-physics based movement for simplicity)
+            handleMovement(deltaTime);
+            
+            // Sync current player position to the server
+            syncPlayerMovement();
+            
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+
+        function handleMovement(deltaTime) {
+            const speed = PLAYER_SPEED * deltaTime;
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0; // Prevent vertical movement from look angle
+
+            let moved = false;
+            
+            if (moveState.forward) {
+                camera.position.addScaledVector(direction, speed);
+                moved = true;
+            }
+            if (moveState.backward) {
+                camera.position.addScaledVector(direction, -speed);
+                moved = true;
+            }
+
+            // Calculate side vector (strafe)
+            const strafe = new THREE.Vector3().crossVectors(camera.up, direction).normalize();
+            if (moveState.right) {
+                camera.position.addScaledVector(strafe, speed);
+                moved = true;
+            }
+            if (moveState.left) {
+                camera.position.addScaledVector(strafe, -speed);
+                moved = true;
+            }
+            
+            if (moved) {
+                // Update profile data used for sync
+                playerProfile.position = camera.position;
+                playerProfile.rotation.y = camera.rotation.y;
+            }
+        }
+        
+        // --- Input Listeners ---
+        function setupGameInput() {
+            document.addEventListener('keydown', (e) => {
+                if (!isPointerLocked) return;
+                switch (e.key.toUpperCase()) {
+                    case 'W': moveState.forward = true; break;
+                    case 'S': moveState.backward = true; break;
+                    case 'A': moveState.left = true; break;
+                    case 'D': moveState.right = true; break;
+                }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                if (!isPointerLocked) return;
+                switch (e.key.toUpperCase()) {
+                    case 'W': moveState.forward = false; break;
+                    case 'S': moveState.backward = false; break;
+                    case 'A': moveState.left = false; break;
+                    case 'D': moveState.right = false; break;
+                    case 'G': showMessage("Grenade Used", `You threw a ${playerProfile.grenadeType}!`); break;
+                }
+            });
+
+            // Mouse Look (requires pointer lock)
+            document.addEventListener('mousemove', (e) => {
+                if (isPointerLocked) {
+                    // Update camera rotation based on mouse delta
+                    camera.rotation.y -= e.movementX * ROTATION_SPEED;
+                    camera.rotation.x -= e.movementY * ROTATION_SPEED;
+                    
+                    // Clamp vertical look (prevent flip)
+                    camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+                }
+            });
+            
+            // Mouse Click (Fire Weapon)
+            document.addEventListener('click', (e) => {
+                if (isPointerLocked) {
+                    // Check if the click event originated from a UI element
+                    if (e.target.closest('#ui-overlay')) return; 
+
+                    showMessage("Fired!", `You fired your ${playerProfile.primaryWeapon}!`);
+                }
+            });
+
+            // Pointer Lock logic
+            const canvasElement = document.getElementById('game-container').querySelector('canvas');
+            if (canvasElement) {
+                canvasElement.addEventListener('click', () => {
+                    if (isGameRunning) {
+                        canvasElement.requestPointerLock();
+                    }
+                });
+            }
+
+            document.addEventListener('pointerlockchange', () => {
+                isPointerLocked = document.pointerLockElement === renderer.domElement;
+                if (!isPointerLocked && isGameRunning) {
+                    showMessage("Pointer Unlocked", "Press OK, then click on the screen to resume controls.");
+                }
+            });
+        }
+        
+        // =========================================================================
+        // === 6. GAME START & MULTIPLAYER SYNC (UNCHANGED) ===
+        // =========================================================================
+        
+        function startGame(lobbyData) {
+            updateScreen('game');
+            isGameRunning = true;
+            
+            // Set HUD info
+            document.getElementById('hud-weapon').textContent = playerProfile.primaryWeapon;
+            document.getElementById('hud-grenade').textContent = playerProfile.grenadeType;
+            
+            // Start the main multiplayer listener
+            startMultiplayerSync();
+            
+            // Initial position (spawn in random corner of the 100x100 map)
+            const randomX = (Math.random() - 0.5) * 50;
+            const randomZ = (Math.random() - 0.5) * 50;
+            camera.position.set(randomX, PLAYER_HEIGHT, randomZ);
+            
+            // Request pointer lock to start the FPS controls
+            renderer.domElement.requestPointerLock();
+        }
+
+        // --- Player Position Sync (Send) ---
+        async function syncPlayerMovement() {
+            if (!isGameRunning || !currentLobbyId || !userId) return;
+
+            const lobbyRef = doc(getLobbyCollectionRef(), currentLobbyId);
+
+            const playerMapUpdate = {};
+            playerMapUpdate[`players.${userId}.position`] = {
+                x: camera.position.x,
+                y: camera.position.y,
+                z: camera.position.z
+            };
+            playerMapUpdate[`players.${userId}.rotation`] = {
+                y: camera.rotation.y
+            };
+            playerMapUpdate[`players.${userId}.timestamp`] = serverTimestamp();
+
+            try {
+                // Use updateDoc to send position data
+                await updateDoc(lobbyRef, playerMapUpdate);
+            } catch (e) {
+                // This is expected if the lobby document is deleted by the host
+                if (e.code !== 'not-found') {
+                    console.error("Error syncing position:", e);
+                }
+            }
+        }
+        
+        // --- Multiplayer Sync (Receive) ---
+        function startMultiplayerSync() {
+            // Remove all existing remote player meshes
+            for (const remoteId in players) {
+                scene.remove(players[remoteId].mesh);
+                delete players[remoteId];
+            }
+            players = {}; // Clear map
+            
+            if (!isAuthReady || playerRefUnsubscribe) return;
+            
+            const lobbyRef = doc(getLobbyCollectionRef(), currentLobbyId);
+
+            playerRefUnsubscribe = onSnapshot(lobbyRef, (docSnap) => {
+                if (!docSnap.exists() || !docSnap.data().players) {
+                    leaveLobby(false, true); // Silent leave, redirect to list
+                    return;
+                }
+                
+                const lobbyData = docSnap.data();
+                const remotePlayers = lobbyData.players;
+
+                // 1. Remove players who left
+                for (const remoteId in players) {
+                    if (!remotePlayers[remoteId] && remoteId !== userId) {
+                        scene.remove(players[remoteId].mesh);
+                        delete players[remoteId];
+                    }
+                }
+
+                // 2. Add new players and update existing ones
+                for (const remoteId in remotePlayers) {
+                    if (remoteId === userId) continue; // Skip local player
+                    
+                    const remoteP = remotePlayers[remoteId];
+                    const pos = remoteP.position;
+
+                    if (!players[remoteId]) {
+                        // New player: create mesh and add to scene
+                        const { mesh, tagSprite } = createPlayerMesh(remoteP.username, remoteP.primaryWeapon);
+                        players[remoteId] = { mesh, tagSprite, data: remoteP };
+                        scene.add(mesh);
+                    }
+
+                    // Update position and rotation
+                    const p = players[remoteId];
+                    // Note: player mesh is centered, so Y needs adjustment for floor contact (pos.y is always PLAYER_HEIGHT)
+                    p.mesh.position.set(pos.x, pos.y - (PLAYER_HEIGHT / 2), pos.z); 
+                    p.mesh.rotation.y = remoteP.rotation.y;
+                }
+            });
+        }
+
+
+        // =========================================================================
+        // === Z. INITIALIZATION ===
+        // =========================================================================
+
+        window.onload = function () {
+            // Initialize 3D environment and input listeners first
+            initThreeJS();
+            setupGameInput();
+            
+            // Initialize Firebase and start the auth process
+            initFirebase();
+
+            // Start the three.js render loop
+            animate(0); 
+        }
+
+    </script>
+</body>
+</html>
